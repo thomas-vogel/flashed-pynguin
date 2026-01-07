@@ -644,7 +644,7 @@ class Configuration:
     ignore_methods: list[str] = dataclasses.field(default_factory=list)
     """Ignore the methods specified here from the module analysis."""
 
-    metric_configuration: MetricConfiguration = dataclasses.field(default_factory=MetricConfiguration)
+    feature_configuration: FeatureConfiguration = dataclasses.field(default_factory=FeatureConfiguration)
     """Configuration used for dynamic search metrics"""
 
 # Singleton instance of the configuration.

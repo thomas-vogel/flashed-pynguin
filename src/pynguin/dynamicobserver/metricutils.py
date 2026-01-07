@@ -128,7 +128,7 @@ class MetricHelper:
     _logger = logging.getLogger(__name__)
 
     def __init__(self):
-        self.SLIDING_WINDOW_SIZE = config.configuration.metric_configuration.sliding_window_size
+        self.SLIDING_WINDOW_SIZE = config.configuration.feature_configuration.sliding_window_size
 
     def get_mean_fitness_per_generation(self, actual_search_results: list[TestSuiteChromosome], calculation_iteration: int) -> list[float]:
         result = []

@@ -15,7 +15,7 @@ class FeatureCalculator(ABC):
 
     def __init__(self):
         self.helper = MetricHelper()
-        self.SLIDING_WINDOW_SIZE = config.configuration.metric_configuration.sliding_window_size
+        self.SLIDING_WINDOW_SIZE = config.configuration.feature_configuration.sliding_window_size
 
 
     @abstractmethod
