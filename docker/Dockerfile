@@ -30,8 +30,8 @@ ENV PYTHONUNBUFFERED 1
 COPY . .
 
 RUN pip install poetry==$POETRY_VERSION \
-    && poetry config virtualenvs.create false \
-    && poetry build
+  && poetry config virtualenvs.create false \
+  && poetry build
 
 
 # Execution stage for Pynguin
@@ -45,7 +45,7 @@ ENV PYNGUIN_VERSION "0.46.0.dev0"
 # By setting the variable, the user acknowledges that they are aware of this.  In the
 # container this is not too much of an issue (if we forget about breaking out of the
 # container and similar things, of course).
-ENV PYNGUIN_DANGER_AWARE ""
+ENV PYNGUIN_DANGER_AWARE "i'm aware"
 # Python shall not write the byte code to *.pyc files; they cannot be cached between
 # runs of the container anyway, hence we save the required time and resources for that
 ENV PYTHONDONTWRITEBYTECODE 1

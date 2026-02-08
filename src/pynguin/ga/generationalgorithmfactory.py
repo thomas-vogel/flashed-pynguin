@@ -30,6 +30,7 @@ import pynguin.ga.testsuitechromosome as tsc
 import pynguin.ga.testsuitechromosomefactory as tscf
 import pynguin.testcase.testfactory as tf
 import pynguin.utils.statistics.statisticsobserver as sso
+import pynguin.dynamicobserver.dynamicfeatureobserver as do
 from pynguin.analyses.constants import ConstantProvider, EmptyConstantProvider
 from pynguin.analyses.module import FilteredModuleTestCluster, ModuleTestCluster
 from pynguin.analyses.seeding import InitialPopulationProvider
@@ -278,6 +279,12 @@ class TestSuiteGenerationAlgorithmFactory(GenerationAlgorithmFactory[tsc.TestSui
         strategy.add_search_observer(sso.SequenceStartTimeObserver())
         strategy.add_search_observer(sso.IterationObserver())
         strategy.add_search_observer(sso.BestIndividualObserver())
+
+        if config.configuration.feature_configuration.enable_feature_calculation:
+            strategy.add_search_observer(do.DynamicFeatureObserver())
+
+        if config.configuration.feature_configuration.enable_raw_data_output:
+            strategy.add_search_observer(do.GenerationObserver())
 
         crossover_function = self._get_crossover_function()
         strategy.crossover_function = crossover_function

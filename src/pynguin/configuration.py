@@ -808,6 +808,17 @@ class StoppingConfiguration:
     """The time (in seconds) per statement that a test is allowed to run
     (up to maximum_test_execution_timeout)."""
 
+@dataclasses.dataclass
+class FeatureConfiguration:
+
+    enable_feature_calculation: bool = False
+    """Enable dynmamic metric calculation"""
+
+    sliding_window_size: int = 10
+    """Size of Sliding window for some metrics"""
+
+    enable_raw_data_output: bool = False
+    """Enables output of test_cases as strings and fitness values per generation"""
 
 @dataclasses.dataclass
 class LLMConfiguration:
@@ -1025,6 +1036,9 @@ class Configuration:
     Filesystem isolation provides some safety by tracking and controlling file operations,
     e.g. preventing file deletion of non-created files, but adds performance overhead."""
 
+
+    feature_configuration: FeatureConfiguration = dataclasses.field(default_factory=FeatureConfiguration)
+    """Configuration used for dynamic search metrics"""
 
 # Singleton instance of the configuration.
 configuration = Configuration(
