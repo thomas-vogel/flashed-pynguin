@@ -10,6 +10,7 @@ import ast
 import dataclasses
 import importlib.util
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -107,6 +108,7 @@ class PyTestChromosomeToAstVisitor(cv.ChromosomeVisitor):
         *,
         store_call_return: bool = False,
         no_xfail: bool = False,
+        sut_module_name: str | None = None,
     ) -> None:
         """The module aliases are shared between test cases.
 
@@ -115,6 +117,9 @@ class PyTestChromosomeToAstVisitor(cv.ChromosomeVisitor):
                 when the references are not used by the following statements.
             no_xfail: If True, unexpected exceptions will be wrapped with pytest.raises()
                 instead of marking the test with @pytest.mark.xfail(strict=True).
+            sut_module_name: The name of the system under test module. If provided and
+                no test cases remain after empty test removal, the module will still be
+                imported to ensure coverage is achieved by import alone.
         """
         self._module_aliases = ns.NamingScope("module")
         # Common modules (e.g. math) are not aliased.
@@ -122,6 +127,7 @@ class PyTestChromosomeToAstVisitor(cv.ChromosomeVisitor):
         self._conversion_results: list[_AstConversionResult] = []
         self._store_call_return: bool = store_call_return
         self._no_xfail: bool = no_xfail
+        self._sut_module_name: str | None = sut_module_name
 
     @property
     def module_aliases(self) -> ns.NamingScope:
@@ -263,11 +269,12 @@ class PyTestChromosomeToAstVisitor(cv.ChromosomeVisitor):
             ]
         return []
 
-    def to_module(self) -> ast.Module:
+    def to_module(self) -> tuple[ast.Module, bool]:
         """Provides a module in PyTest style that contains all visited test cases.
 
         Returns:
-            An ast module containing all visited test cases.
+            A tuple of (ast module containing all visited test cases, bool indicating
+            whether coverage is achieved by import alone - i.e., no test cases remain).
         """
         if any(result.exception_status for result in self._conversion_results):
             self._common_modules.add("pytest")
@@ -275,7 +282,25 @@ class PyTestChromosomeToAstVisitor(cv.ChromosomeVisitor):
             self._module_aliases, self._common_modules
         )
         functions = self.__create_functions(self._conversion_results, with_self_arg=False)
-        return ast.Module(body=import_nodes + functions, type_ignores=[])
+
+        coverage_by_import_only = False
+        if len(functions) == 0 and self._sut_module_name is not None:
+            coverage_by_import_only = True
+            sut_import = ast.Import(
+                names=[ast.alias(name=_canonical_module_name(self._sut_module_name), asname=None)]
+            )
+            import_nodes.append(sut_import)
+
+            # Create a single empty test case to ensure pytest returns exit code 0
+            empty_test = PyTestChromosomeToAstVisitor.__create_function_node(
+                "empty",
+                [ast.Pass()],
+                with_self_arg=False,
+                is_failing=False,
+            )
+            functions.append(empty_test)
+
+        return ast.Module(body=import_nodes + functions, type_ignores=[]), coverage_by_import_only
 
 
 _PYNGUIN_FILE_HEADER = (
@@ -283,9 +308,15 @@ _PYNGUIN_FILE_HEADER = (
     "# Please check them before you use them.\n"
 )
 
+_COVERAGE_BY_IMPORT_COMMENT = "# Importing this module achieves coverage.\n"
+
 
 def save_module_to_file(
-    module: ast.Module, target: Path, *, format_with_black: bool = True
+    module: ast.Module,
+    target: Path,
+    *,
+    format_with_black: bool = True,
+    module_name_with_coverage: str | None = None,
 ) -> None:
     """Saves an AST module to a file.
 
@@ -294,6 +325,9 @@ def save_module_to_file(
         module: The AST module
         format_with_black: ast.unparse is not PEP-8 compliant, so we apply black
             on the result.
+        module_name_with_coverage: If provided, adds a comment explaining that importing
+            the module achieves coverage, and appends '# noqa: F401' to the import
+            statement to prevent it from being removed by linters.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open(mode="w", encoding="UTF-8") as file:
@@ -309,5 +343,11 @@ def save_module_to_file(
                 output = black.format_str(output, mode=black.FileMode())
             except black.parsing.InvalidInput as e:
                 _LOGGER.warning("Could not format the module '%s' with black: %s", target, e)
+
+        if module_name_with_coverage:
+            file.write(_COVERAGE_BY_IMPORT_COMMENT)
+            # Add
+            pattern = re.compile(rf"^import {re.escape(module_name_with_coverage)}\b", re.MULTILINE)
+            output = pattern.sub(rf"import {module_name_with_coverage}  # noqa: F401", output)
 
         file.write(output)
