@@ -18,9 +18,11 @@ import inspect
 import itertools
 import logging
 import os
+import random
 import signal
 import sys
 import threading
+import time
 from abc import abstractmethod
 from pathlib import Path
 from queue import Empty, Queue
@@ -946,6 +948,25 @@ class AbstractTestCaseExecutor(abc.ABC):
             yield self.execute(test_case)
 
 
+def _make_deterministic():
+    """Make the execution deterministic.
+
+    Reseed the module-level random and every SUT-related random.Random
+    instance that was tracked by the _patch_random() hook.  Pynguin's own
+    randomness.RNG is excluded so that Pynguin's own decisions remain
+    unaffected.
+    """
+    seed = config.configuration.seeding.seed
+    random.seed(seed)
+    from pynguin.utils import randomness as _rnd  # noqa: PLC0415
+
+    tracked = getattr(random.Random.seed, "__pynguin_instances__", None)
+    if tracked is not None:
+        for _inst in list(tracked):
+            if _inst is not _rnd.RNG:
+                _inst.seed(seed)
+
+
 class TestCaseExecutor(AbstractTestCaseExecutor):
     """An executor that executes the generated test cases."""
 
@@ -1085,6 +1106,7 @@ class TestCaseExecutor(AbstractTestCaseExecutor):
             return result
 
     def _before_test_case_execution(self, test_case: tc.TestCase) -> None:
+        _make_deterministic()
         self._subject_properties.instrumentation_tracer.init_trace()
         for observer in self._yield_remote_observers():
             observer.before_test_case_execution(test_case)
@@ -1244,6 +1266,27 @@ if hasattr(signal, "SIGKILL"):
 
 if hasattr(signal, "SIGSEGV"):
     SUPPORTED_EXIT_CODE_MESSAGES[-signal.SIGSEGV] = "Segmentation fault detected"
+
+
+class PatchRandomOnUnpickle:
+    """A hook that patches random when unpickled in a subprocess.
+
+    This ensures that random.Random.seed is patched before the SUT is unpickled
+    and potentially creates new random.Random instances (e.g., mimesis).
+    """
+
+    def __init__(self):
+        """Create a new hook."""
+        self._config = config.configuration
+
+    def __getstate__(self):
+        return {"config": self._config}
+
+    def __setstate__(self, state):
+        config.configuration = state["config"]
+        from pynguin.generator import _patch_random  # noqa: PLC0415
+
+        _patch_random()
 
 
 class SubprocessTestCaseExecutor(TestCaseExecutor):
@@ -1451,6 +1494,7 @@ class SubprocessTestCaseExecutor(TestCaseExecutor):
         remote_observers = tuple(self._yield_remote_observers())
 
         args = (
+            PatchRandomOnUnpickle(),
             self._subject_properties,
             self._module_provider,
             self._maximum_test_execution_timeout,
@@ -1702,6 +1746,7 @@ class SubprocessTestCaseExecutor(TestCaseExecutor):
 
     @staticmethod
     def _execute_test_cases_in_subprocess(  # noqa: PLR0917
+        _patch_random_hook: object,
         subject_properties: SubjectProperties,
         module_provider: ModuleProvider,
         maximum_test_execution_timeout: int,
@@ -2046,7 +2091,12 @@ class TypeTracingTestCaseExecutor(AbstractTestCaseExecutor):
             ):
                 # TODO(fk) Do we record wrong stuff, i.e., type checks from observers?
                 #  Make use of type errors?
+                start = time.time_ns()
                 self._delegate.execute(test_case)
+                stat.add_to_runtime_variable(
+                    RuntimeVariable.TypeTracingTime, time.time_ns() - start
+                )
+                stat.add_to_runtime_variable(RuntimeVariable.TypeTracingExecutions, 1)
         return result
 
 
